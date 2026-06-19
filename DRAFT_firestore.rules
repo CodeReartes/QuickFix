@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    // --- Entity Validations ---
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'role', 'displayName']) &&
+             data.keys().size() <= 10 &&
+             data.email is string && data.email.size() < 100 &&
+             data.role in ['client', 'professional'] &&
+             data.displayName is string && data.displayName.size() < 100;
+    }
+
+    function isValidJob(data) {
+      return data.keys().hasAll(['clientId', 'category', 'description', 'status', 'location', 'createdAt', 'updatedAt']) &&
+             data.clientId == request.auth.uid &&
+             data.category is string && data.category.size() < 50 &&
+             data.description is string && data.description.size() < 1000 &&
+             data.status in ['pending', 'accepted', 'in_progress', 'completed', 'cancelled'] &&
+             data.location.lat is number && data.location.lng is number;
+    }
+
+    // --- Collection Rules ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid; // Prevent scraping
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming()) && 
+                    incoming().role == existing().role; // Immutable role
+    }
+
+    match /jobs/{jobId} {
+      allow get: if isSignedIn();
+      
+      // Professional can list pending jobs or their own assigned jobs
+      allow list: if isSignedIn() && (
+        resource.data.clientId == request.auth.uid || 
+        resource.data.professionalId == request.auth.uid ||
+        resource.data.status == 'pending'
+      );
+
+      allow create: if isVerified() && isValidJob(incoming()) && incoming().status == 'pending';
+      
+      allow update: if isVerified() && (
+        // Client actions (Cancel, Finalize - if completed status logic is handled)
+        (isOwner(existing().clientId) && incoming().clientId == existing().clientId && (
+          // Action: Cancel
+          (incoming().status == 'cancelled' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+          // Action: Request Review (implicitly by status change if needed)
+          false
+        )) ||
+        // Professional actions (Accept, Start, Finish)
+        (isSignedIn() && (
+          // Action: Accept
+          (existing().status == 'pending' && 
+           incoming().professionalId == request.auth.uid && 
+           incoming().status == 'accepted' && 
+           incoming().diff(existing()).affectedKeys().hasOnly(['professionalId', 'status', 'updatedAt'])) ||
+          
+          // Action: Start/Finish (if already assigned)
+          (existing().professionalId == request.auth.uid && (
+            (incoming().status in ['in_progress', 'completed'] && 
+             incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'photoAfter']))
+          ))
+        ))
+      );
+    }
+
+    match /jobs/{jobId}/messages/{messageId} {
+      function canChat() {
+        let job = get(/databases/$(database)/documents/jobs/$(jobId)).data;
+        return request.auth.uid == job.clientId || request.auth.uid == job.professionalId;
+      }
+      allow read: if isSignedIn() && canChat();
+      allow create: if isSignedIn() && canChat() && incoming().senderId == request.auth.uid;
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if isSignedIn();
+      allow create: if isVerified() && 
+                    incoming().fromId == request.auth.uid && 
+                    get(/databases/$(database)/documents/jobs/$(incoming().jobId)).data.clientId == request.auth.uid &&
+                    get(/databases/$(database)/documents/jobs/$(incoming().jobId)).data.status == 'completed';
+    }
+  }
+}

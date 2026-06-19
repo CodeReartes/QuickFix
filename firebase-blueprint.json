@@ -1,0 +1,201 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System user with either client or professional role.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["client", "professional"] },
+        "photoURL": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "profession": { "type": "string" },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "number" },
+        "is_premium": { "type": "boolean" },
+        "premium_status": { "type": "string", "enum": ["none", "pending", "active", "cancelling"] },
+        "payment_proof_url": { "type": "string" },
+        "last_payment_date": { "type": "number" },
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" },
+            "address": { "type": "string" }
+          }
+        },
+        "client_points": { "type": "number" },
+        "invited_users": { "type": "number" },
+        "coupons": { "type": "array" },
+        "referral_code": { "type": "string" },
+        "referred_by": { "type": "string" },
+        "extra_garantias": { "type": "number" }
+      },
+      "required": ["email", "role", "displayName"]
+    },
+    "JobRequest": {
+      "title": "JobRequest",
+      "description": "A service request created by a client.",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string" },
+        "professionalId": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "photoBefore": { "type": "string" },
+        "photoAfter": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "in_progress", "completed", "cancelled", "paid_completed"] },
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" },
+            "address": { "type": "string" }
+          }
+        },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "price": { "type": "string" },
+        "clientName": { "type": "string" },
+        "professionalName": { "type": "string" },
+        "professionalAvatar": { "type": "string" },
+        "finishedWorkImage": { "type": "string" },
+        "clientAvatar": { "type": "string" }
+      },
+      "required": ["clientId", "category", "description", "status", "location"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Internal chat message for a job.",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["senderId", "createdAt"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Feedback left after a job is completed.",
+      "type": "object",
+      "properties": {
+        "jobId": { "type": "string" },
+        "fromId": { "type": "string" },
+        "toId": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["jobId", "fromId", "toId", "rating", "comment", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User notification indicator.",
+      "type": "object",
+      "properties": {
+        "recipientId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["hire_request", "success", "budget", "system", "message"] },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["recipientId", "title", "description", "type", "read", "createdAt"]
+    },
+    "SupportRequest": {
+      "title": "SupportRequest",
+      "description": "A support ticket opened by a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["userId", "status", "createdAt", "updatedAt"]
+    },
+    "SupportMessage": {
+      "title": "SupportMessage",
+      "description": "A message within a support request.",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "text": { "type": "string" }
+      },
+      "required": ["senderId", "createdAt"]
+    },
+    "Dispute": {
+      "title": "Dispute",
+      "description": "Dispute claim for mediator audit.",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientAvatar": { "type": "string" },
+        "jobId": { "type": "string" },
+        "jobCategory": { "type": "string" },
+        "jobDescription": { "type": "string" },
+        "professionalId": { "type": "string" },
+        "professionalName": { "type": "string" },
+        "disputeType": { "type": "string" },
+        "explanation": { "type": "string" },
+        "evidencePhoto": { "type": "string" },
+        "status": { "type": "string" },
+        "mediatorName": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["clientId", "jobId", "disputeType", "explanation", "status"]
+    },
+    "ReferralCode": {
+      "title": "ReferralCode",
+      "description": "Referral tracking document.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" }
+      },
+      "required": ["ownerId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/jobs/{jobId}": {
+      "schema": "JobRequest",
+      "description": "Main job requests"
+    },
+    "/jobs/{jobId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Chat messages for a specific job"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Service reviews"
+    },
+    "/notifications/{notifId}": {
+      "schema": "Notification",
+      "description": "Notifications for users"
+    },
+    "/support_requests/{supportId}": {
+      "schema": "SupportRequest",
+      "description": "Help center support requests"
+    },
+    "/support_requests/{supportId}/messages/{messageId}": {
+      "schema": "SupportMessage",
+      "description": "Messages inside support requests"
+    },
+    "/disputes/{disputeId}": {
+      "schema": "Dispute",
+      "description": "Mediator dispute center"
+    },
+    "/referral_codes/{code}": {
+      "schema": "ReferralCode",
+      "description": "Registered invitation codes"
+    }
+  }
+}

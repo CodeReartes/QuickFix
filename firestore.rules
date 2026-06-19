@@ -1,0 +1,245 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isAdmin() { return isSignedIn() && request.auth.token.email == 'reartes17diego@gmail.com'; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128; }
+
+    // --- Entity Validations ---
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'role', 'displayName']) &&
+             data.keys().size() <= 30 &&
+             data.email is string && data.email.size() < 100 &&
+             data.role in ['client', 'professional'] &&
+             data.displayName is string && data.displayName.size() < 100 &&
+             (!('phoneNumber' in data) || (data.phoneNumber is string && data.phoneNumber.size() < 30)) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() < 500)) &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 5000000)) &&
+             (!('emailVerified' in data) || data.emailVerified is bool) &&
+             (!('experienceYears' in data) || data.experienceYears is int || data.experienceYears is float) &&
+             (!('credentials' in data) || data.credentials is list) &&
+             (!('professions' in data) || data.professions is list) &&
+             (!('rating' in data) || data.rating is int || data.rating is float) &&
+             (!('reviewCount' in data) || data.reviewCount is int || data.reviewCount is float) &&
+             (!('location' in data) || data.location is map) &&
+             (!('is_premium' in data) || data.is_premium is bool) &&
+             (!('premium_status' in data) || data.premium_status in ['none', 'pending', 'active', 'cancelling']) &&
+             (!('payment_proof_url' in data) || data.payment_proof_url is string) &&
+             (!('is_blocked' in data) || data.is_blocked is bool) &&
+             (!('last_payment_date' in data) || data.last_payment_date is int || data.last_payment_date is float) &&
+             (!('cancel_at' in data) || data.cancel_at is timestamp || data.cancel_at is int || data.cancel_at is float) &&
+             (!('online' in data) || data.online is bool) &&
+             (!('lastActive' in data) || data.lastActive is int || data.lastActive is float) &&
+             (!('client_points' in data) || data.client_points is int) &&
+            (!('invited_users' in data) || data.invited_users is int) &&
+            (!('coupons' in data) || data.coupons is list) &&
+            (!('referral_code' in data) || data.referral_code is string) &&
+            (!('referred_by' in data) || data.referred_by is string || data.referred_by == null) &&
+            (!('extra_garantias' in data) || data.extra_garantias is int) &&
+            (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+
+    function isValidJob(data) {
+      return data.keys().hasAll(['clientId', 'category', 'description', 'status', 'location', 'createdAt', 'updatedAt']) &&
+             (data.clientId == request.auth.uid || ('professionalId' in data && data.professionalId == request.auth.uid)) &&
+             data.category is string && data.category.size() <= 200 &&
+             data.description is string && data.description.size() <= 10000 &&
+             data.status in ['pending', 'accepted', 'in_progress', 'completed', 'cancelled', 'paid_completed'] &&
+             data.location is map &&
+             (
+               (!('lat' in data.location) || data.location.lat is int || data.location.lat is float) &&
+               (!('lng' in data.location) || data.location.lng is int || data.location.lng is float) &&
+               (!('address' in data.location) || (data.location.address is string && data.location.address.size() <= 2000))
+             ) &&
+             (!('clientName' in data) || (data.clientName is string && data.clientName.size() <= 200)) &&
+             (!('professionalName' in data) || (data.professionalName is string && data.professionalName.size() <= 200)) &&
+             (!('professionalAvatar' in data) || (data.professionalAvatar is string && data.professionalAvatar.size() <= 5000000)) &&
+             (!('price' in data) || (data.price is string && data.price.size() <= 200) || (data.price is int || data.price is float)) &&
+             (!('title' in data) || (data.title is string && data.title.size() <= 500)) &&
+             (!('image' in data) || (data.image is string && data.image.size() <= 5000000)) &&
+             (!('finishedWorkImage' in data) || (data.finishedWorkImage is string && data.finishedWorkImage.size() <= 5000000)) &&
+             (!('clientAvatar' in data) || (data.clientAvatar is string && data.clientAvatar.size() <= 5000000)) &&
+             (!('paymentMethods' in data) || (data.paymentMethods is list && data.paymentMethods.size() <= 10) || data.paymentMethods is string) &&
+             (!('rating' in data) || ((data.rating is int || data.rating is float) && data.rating >= 1 && data.rating <= 5)) &&
+             (!('review' in data) || (data.review is string && data.review.size() <= 5000)) &&
+             (!('lastMessage' in data) || (data.lastMessage is string && data.lastMessage.size() <= 2000)) &&
+             (!('lastMessageSenderId' in data) || (data.lastMessageSenderId is string && data.lastMessageSenderId.size() <= 128)) &&
+             (!('hasUnreadMessage' in data) || data.hasUnreadMessage is bool) &&
+             (!('urgent' in data) || data.urgent is bool || data.urgent is string);
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['recipientId', 'title', 'description', 'type', 'read', 'createdAt']) &&
+             data.recipientId is string && data.recipientId.size() <= 128 &&
+             data.title is string && data.title.size() <= 100 &&
+             data.description is string && data.description.size() <= 500 &&
+             data.type in ['hire_request', 'success', 'budget', 'system', 'message'] &&
+             data.read is bool &&
+             data.createdAt == request.time;
+    }
+
+    // --- Collection Rules ---
+
+    match /notifications/{notifId} {
+      allow get: if isSignedIn() && isValidId(notifId) && resource.data.recipientId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.recipientId == request.auth.uid;
+      allow create: if isSignedIn() && isValidNotification(incoming());
+      allow update: if isSignedIn() && isValidId(notifId) && resource.data.recipientId == request.auth.uid && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isSignedIn() && isValidId(notifId) && resource.data.recipientId == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (isValidId(userId) || isAdmin());
+      allow list: if isAdmin() || (isSignedIn() && resource.data.role == 'professional');
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUser(incoming()) && (!('is_premium' in incoming()) || incoming().is_premium == false) && (!('premium_status' in incoming()) || incoming().premium_status == 'none');
+      allow update: if isValidId(userId) && (
+        isAdmin() ||
+        (isValidUser(incoming()) && (
+          (isOwner(userId) && (
+            // Allow normal updates but prevent escalating privileges
+            (
+              incoming().diff(existing()).affectedKeys().hasAny(['is_premium', 'last_payment_date']) == false && 
+              (!('premium_status' in incoming()) || incoming().premium_status == existing().premium_status || incoming().premium_status == 'pending' || incoming().premium_status == 'cancelling')
+            )
+          )) ||
+          // Peer-to-peer referral: allow another signed-in user to reward the inviter
+          (
+            isSignedIn() && 
+            incoming().diff(existing()).affectedKeys().hasOnly(['invited_users', 'client_points']) &&
+            incoming().invited_users == existing().invited_users + 1 &&
+            incoming().client_points >= existing().client_points
+          )
+        ))
+      );
+    }
+
+    match /referral_codes/{code} {
+      allow get: if isSignedIn() && isValidId(code);
+      allow create: if isSignedIn() && isValidId(code) && incoming().ownerId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(code) && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && isValidId(code) && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /jobs/{jobId} {
+      allow get: if isSignedIn() && isValidId(jobId);
+      
+      // Professional can list pending jobs or their own assigned jobs
+      allow list: if isSignedIn() && (
+        resource.data.clientId == request.auth.uid || 
+        resource.data.professionalId == request.auth.uid ||
+        resource.data.status == 'pending'
+      );
+
+      allow create: if isSignedIn();
+
+      allow delete: if isSignedIn() && isValidId(jobId) && (
+        isOwner(existing().clientId) || isOwner(existing().professionalId) || isAdmin()
+      );
+      
+      allow update: if isSignedIn() && isValidId(jobId) && isValidJob(incoming()) && (
+        // Action: Cancel
+        (incoming().status == 'cancelled' && 
+         (isOwner(existing().clientId) || (existing().professionalId != null && isOwner(existing().professionalId))) && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        ||
+        // Professional actions (Accept, Start, Finish)
+        (
+          // Action: Accept
+          (existing().status == 'pending' && 
+           incoming().professionalId == request.auth.uid && 
+           incoming().status == 'accepted' && 
+           incoming().diff(existing()).affectedKeys().hasOnly(['professionalId', 'professionalName', 'professionalAvatar', 'status', 'updatedAt']))
+          ||
+          // Action: Start/Finish
+          (existing().professionalId == request.auth.uid && 
+           incoming().status in ['in_progress', 'completed'] && 
+           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        )
+        ||
+        // Action: Upload Finished Photo (Both can do it)
+        ((isOwner(existing().clientId) || (existing().professionalId != null && isOwner(existing().professionalId))) &&
+         (incoming().status == 'completed' || incoming().status == existing().status) &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['finishedWorkImage', 'status', 'updatedAt']))
+        ||
+        // Action: Mark Paid & Review (Client only)
+        (isOwner(existing().clientId) && 
+         existing().status in ['completed', 'accepted', 'in_progress'] &&
+         incoming().status == 'paid_completed' &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rating', 'review', 'updatedAt', 'finishedWorkImage']))
+        ||
+        // Action: Chat Updates (lastMessage, etc)
+        ((isOwner(existing().clientId) || (existing().professionalId != null && isOwner(existing().professionalId))) &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'lastMessageSenderId', 'hasUnreadMessage', 'updatedAt']))
+      );
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['senderId', 'createdAt']) &&
+             data.senderId == request.auth.uid &&
+             (!('text' in data) || (data.text is string && data.text.size() <= 2000)) &&
+             (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 2000000));
+    }
+
+    match /jobs/{jobId}/messages/{messageId} {
+      allow get: if isSignedIn() && isValidId(jobId) && isValidId(messageId) && (
+        get(/databases/$(database)/documents/jobs/$(jobId)).data.clientId == request.auth.uid ||
+        get(/databases/$(database)/documents/jobs/$(jobId)).data.professionalId == request.auth.uid
+      );
+      allow list: if isSignedIn() && isValidId(jobId) && (
+        get(/databases/$(database)/documents/jobs/$(jobId)).data.clientId == request.auth.uid ||
+        get(/databases/$(database)/documents/jobs/$(jobId)).data.professionalId == request.auth.uid
+      );
+      allow create: if isSignedIn() && isValidId(jobId) && isValidId(messageId) && isValidMessage(incoming()) && (
+        get(/databases/$(database)/documents/jobs/$(jobId)).data.clientId == request.auth.uid ||
+        get(/databases/$(database)/documents/jobs/$(jobId)).data.professionalId == request.auth.uid
+      ) && incoming().createdAt == request.time;
+    }
+
+    match /support_requests/{supportId} {
+      allow get: if isSignedIn() && isValidId(supportId) && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(supportId) && 
+                    incoming().userId == request.auth.uid &&
+                    incoming().status == 'open' &&
+                    incoming().createdAt == request.time &&
+                    incoming().updatedAt == request.time;
+      allow update: if isSignedIn() && isValidId(supportId) && resource.data.userId == request.auth.uid &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+    }
+
+    match /support_requests/{supportId}/messages/{messageId} {
+      allow get: if isSignedIn() && isValidId(supportId) && isValidId(messageId) &&
+                 get(/databases/$(database)/documents/support_requests/$(supportId)).data.userId == request.auth.uid;
+      allow list: if isSignedIn() && isValidId(supportId) &&
+                 get(/databases/$(database)/documents/support_requests/$(supportId)).data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(supportId) && isValidId(messageId) &&
+                 get(/databases/$(database)/documents/support_requests/$(supportId)).data.userId == request.auth.uid &&
+                 incoming().senderId == request.auth.uid &&
+                 incoming().createdAt == request.time;
+    }
+
+    match /disputes/{disputeId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if isSignedIn();
+      allow create: if isVerified() && 
+                    incoming().fromId == request.auth.uid;
+    }
+  }
+}
