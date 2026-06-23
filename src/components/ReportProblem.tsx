@@ -46,7 +46,7 @@ import {
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { analyzeProblemImage, enhanceDescription } from '../services/geminiService';
+import { analyzeProblemImage, analyzeProblemText } from '../services/geminiService';
 import { useAuth } from '../services/authService';
 import { useTheme } from '../services/themeService';
 import { useConfig } from '../services/configService';
@@ -185,17 +185,39 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isEnhancingDescription, setIsEnhancingDescription] = useState(false);
 
-  const handleEnhanceDescription = async () => {
+  const handleAnalyzeText = async () => {
     if (!details.trim()) return;
     setIsEnhancingDescription(true);
     try {
       const currentCatName = CATEGORIES.find(c => c.id === selectedCategory)?.name || 'General';
-      const enhanced = await enhanceDescription(details, currentCatName);
-      if (enhanced) {
-        setDetails(enhanced);
+      const result = await analyzeProblemText(details, currentCatName);
+      
+      const categoryMapping: Record<string, string> = {
+        'Electricista': 'electricity',
+        'Plomero': 'plumbing',
+        'Gasista': 'gas',
+        'Albañil': 'masonry',
+        'Pintor': 'painting',
+        'Cerrajero': 'locksmith',
+      };
+      const matchedId = result.category ? categoryMapping[result.category] : null;
+
+      setAnalysisResult({
+        category: matchedId,
+        urgency: result.urgency || "Media",
+        slangDescription: result.slangDescription || "",
+        description: result.description,
+        estimatedPrice: result.estimatedPrice,
+        numericBasePrice: result.numericBasePrice,
+        breakdowns: result.breakdowns
+      });
+      
+      if (matchedId) {
+        setSelectedCategory(matchedId);
       }
+      
     } catch (err) {
-      console.error("Error enhancing description with Gemini:", err);
+      console.error("Error analyzing text with Gemini:", err);
     } finally {
       setIsEnhancingDescription(false);
     }
@@ -353,7 +375,7 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
             rating: (data.reviewCount && data.reviewCount > 0) ? (data.rating || 5.0) : (data.references && data.references.length > 0 ? (data.rating || 5.0) : null),
             jobs: data.reviewCount || 0,
             distance: '1.0 km', // Mock distance
-            price: 'Precio a convenir',
+            price: data.price || 'Precio a convenir',
             photo: data.photoURL || 'https://picsum.photos/seed/user/200/200',
             specialties: data.professions || ['Profesional'],
             references: data.references || [],
@@ -466,6 +488,7 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
     location, 
     priority, 
     paymentMethods,
+    timeframe,
     analysisResult 
   } = formState;
 
@@ -477,7 +500,46 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
   const setLocation = (val: {lat: number, lng: number} | null) => updateFormState({ location: val });
   const setPriority = (val: 'normal' | 'urgent' | null) => updateFormState({ priority: val });
   const setPaymentMethods = (val: string[]) => updateFormState({ paymentMethods: val });
+  const setTimeframe = (val: string) => updateFormState({ timeframe: val });
   const setAnalysisResult = (val: any) => updateFormState({ analysisResult: val });
+
+  const [customBudgetDisplayValue, setCustomBudgetDisplayValue] = useState<string>('');
+
+  // Synchronize custom budget input when analysisResult changes (e.g. from AI scan)
+  useEffect(() => {
+    if (analysisResult?.numericBasePrice) {
+      setCustomBudgetDisplayValue(new Intl.NumberFormat('es-AR').format(analysisResult.numericBasePrice));
+    } else {
+      setCustomBudgetDisplayValue('');
+    }
+  }, [analysisResult?.numericBasePrice]);
+
+  const handleBasePriceChange = (price: number) => {
+    if (price <= 0) {
+      setAnalysisResult(null);
+      return;
+    }
+    const currentCategoryName = CATEGORIES.find(c => c.id === selectedCategory)?.name || 'Servicio';
+    
+    if (analysisResult) {
+      setAnalysisResult({
+        ...analysisResult,
+        numericBasePrice: price,
+        estimatedPrice: `$${new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0 }).format(price)} ARS`
+      });
+    } else {
+      setAnalysisResult({
+        category: currentCategoryName,
+        matchedId: selectedCategory,
+        urgency: priority === 'urgent' ? 'Alta - Urgente' : 'Media',
+        slangDescription: details || '',
+        description: 'Presupuesto ingresado manualmente por el cliente.',
+        estimatedPrice: `$${new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0 }).format(price)} ARS`,
+        numericBasePrice: price,
+        breakdowns: {} // Fallback structured values filled reactively
+      });
+    }
+  };
 
   const fetchAddress = async (lat: number, lng: number) => {
     try {
@@ -670,6 +732,7 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
         status: 'pending',
         urgent: priority === 'urgent',
         paymentMethods: paymentMethods || ['Efectivo'],
+        timeframe: timeframe || 'En el día',
         location: {
           address: address || 'Ubicación no especificada',
           lat: location?.lat || -31.4167, // Córdoba fallback
@@ -1297,12 +1360,12 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
                     value={details}
                     onChange={(e) => setDetails(e.target.value)}
                     placeholder="Describí tu problema aquí... Ej: 'Tengo una canilla que pierde en la cocina'"
-                    className="w-full min-h-[90px] bg-bg-secondary rounded-[16px] border border-transparent p-4 focus:bg-white dark:focus:bg-bg-primary focus:border-primary/20 focus:ring-4 focus:ring-primary/5 outline-none transition-all placeholder:text-text-muted/30 text-text-main font-semibold text-sm shadow-inner resize-none pb-12"
+                    className="w-full min-h-[90px] bg-bg-secondary rounded-[16px] border border-transparent p-4 focus:bg-white dark:focus:bg-bg-primary focus:border-primary/20 focus:ring-4 focus:ring-primary/5 outline-none transition-all placeholder:text-gray-650 dark:placeholder:text-gray-400 text-text-main font-semibold text-sm shadow-inner resize-none pb-12"
                   />
                   <div className="absolute bottom-2 right-2 flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={handleEnhanceDescription}
+                      onClick={handleAnalyzeText}
                       disabled={isEnhancingDescription || !details.trim()}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black tracking-wide transition-all ${
                         isEnhancingDescription 
@@ -1311,17 +1374,17 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
                             ? 'bg-gray-100/50 dark:bg-white/5 text-gray-400 cursor-not-allowed opacity-50'
                             : 'bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/20 shadow-soft cursor-pointer hover:scale-[1.03] active:scale-[0.98]'
                       }`}
-                      title="Enriquecer descripción usando Inteligencia Artificial de Gemini"
+                      title="Analizar y cotizar con Inteligencia Artificial"
                     >
                       {isEnhancingDescription ? (
                         <>
                           <Loader2 size={12} className="animate-spin" />
-                          Mejorando...
+                          Analizando...
                         </>
                       ) : (
                         <>
                           <Sparkles size={11} className="text-purple-500 shrink-0" />
-                          Redactar con IA
+                          Cotizar con IA
                         </>
                       )}
                     </button>
@@ -1329,10 +1392,10 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted ml-3 opacity-50">Dirección y Ubicación</label>
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-700 dark:text-gray-300 ml-3">Dirección y Ubicación</label>
                   <div className="flex gap-2">
                     <div className="relative flex-1 group">
-                      <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-text-muted/40 group-focus-within:text-primary">
+                      <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-text-muted/45 group-focus-within:text-primary">
                         <MapPin size={16} />
                       </div>
                       <input 
@@ -1340,7 +1403,7 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
                         value={address}
                         onChange={(e) => setAddress(e.target.value)}
                         placeholder="Calle, Número, Ciudad..."
-                        className="w-full bg-bg-secondary rounded-[16px] border border-transparent h-11 pl-11 pr-10 focus:bg-white dark:focus:bg-bg-primary focus:border-primary/20 focus:ring-4 focus:ring-primary/5 outline-none transition-all placeholder:text-text-muted/30 text-text-main font-bold text-sm shadow-inner"
+                        className="w-full bg-bg-secondary rounded-[16px] border border-transparent h-11 pl-11 pr-10 focus:bg-white dark:focus:bg-bg-primary focus:border-primary/20 focus:ring-4 focus:ring-primary/5 outline-none transition-all placeholder:text-gray-650 dark:placeholder:text-gray-400 text-text-main font-bold text-sm shadow-inner"
                       />
                       <button 
                         onClick={() => {
@@ -1507,9 +1570,9 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
                           </div>
                         )}
 
-                        <p className="text-xs text-text-muted font-medium mb-4 leading-relaxed pl-1">
+                        <div className="text-xs text-text-muted font-medium mb-4 leading-relaxed whitespace-pre-wrap">
                           {analysisResult.description}
-                        </p>
+                        </div>
 
                         {/* Interactive Filter Toggles */}
                         <div className="border-t border-gray-150 dark:border-gray-800 pt-3.5 mb-4 flex flex-col gap-3">
@@ -1568,12 +1631,11 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    if (confirm(`Para elegir el Plan Premium y acceder a la comisión reducida al 10%, necesitas suscribirte a la Membresía Premium ($${config.premiumMonthlyFee.toLocaleString('es-AR')} ARS/mes). ¿Deseas ir a la sección de abonos para activarla ahora?`)) {
+                                      // Se omite la confirmación temporalmente ya que puede estar bloqueada
                                       localStorage.setItem('triggerPremiumModal', 'true');
                                       if (onProfileClick) {
                                         onProfileClick();
                                       }
-                                    }
                                   }}
                                   className={`py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                                     selectedTierFilter === 'premium'
@@ -1591,11 +1653,11 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
 
                         {/* Invoice & Financial Breakdown Layout */}
                         <div className="bg-white/50 dark:bg-black/25 border border-dashed border-gray-250 dark:border-gray-800 rounded-2xl p-3.5 flex flex-col gap-2">
-                          <p className="text-[9px] font-black text-text-muted uppercase tracking-[0.15em] border-b border-gray-150 dark:border-gray-800 pb-1.5 flex items-center gap-1">
+                          <p className="text-[9px] font-black text-gray-700 dark:text-gray-300 uppercase tracking-[0.15em] border-b border-gray-150 dark:border-gray-800 pb-1.5 flex items-center gap-1">
                             <FileText size={12} className="text-primary" /> DESGLOSE FINANCIERO ESTIMADO
                           </p>
                           
-                          <div className="flex justify-between items-center text-xs text-text-muted font-medium">
+                          <div className="flex justify-between items-center text-xs text-gray-750 dark:text-gray-300 font-semibold">
                             <span>TOTAL FACTURADO (Bruto):</span>
                             <span className="text-text-main font-bold">
                               {formatter.format(selectedBreakdown.totalFacturado)}
@@ -1603,7 +1665,7 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
                           </div>
 
                           {selectedTaxFilter === 'con_iva' && (
-                            <div className="flex justify-between items-center text-xs text-text-muted font-medium">
+                            <div className="flex justify-between items-center text-xs text-gray-750 dark:text-gray-300 font-semibold">
                               <span>TOTAL NETO (Base Imponible):</span>
                               <span className="text-text-main font-semibold">
                                 {formatter.format(selectedBreakdown.totalNeto)}
@@ -1611,21 +1673,21 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
                             </div>
                           )}
 
-                          <div className="flex justify-between items-center text-xs text-text-muted font-medium">
+                          <div className="flex justify-between items-center text-xs text-gray-750 dark:text-gray-300 font-semibold">
                             <span>Costo de Gestión ({selectedTierFilter === 'premium' ? '10%' : '17%'}):</span>
                             <span className="text-text-main font-semibold">
                               {formatter.format(selectedBreakdown.costoGestion)}
                             </span>
                           </div>
 
-                          <div className="flex justify-between items-center text-xs text-text-muted font-medium">
+                          <div className="flex justify-between items-center text-xs text-gray-750 dark:text-gray-300 font-semibold">
                             <span>Mano de Obra Base (Neto):</span>
                             <span className="text-text-main font-semibold">
                               {formatter.format(selectedBreakdown.manoObra)}
                             </span>
                           </div>
 
-                          <div className="flex justify-between items-center text-xs text-text-muted font-medium">
+                          <div className="flex justify-between items-center text-xs text-gray-750 dark:text-gray-300 font-semibold">
                             <span>I.V.A (21%):</span>
                             <span className="text-text-main font-semibold">
                               {selectedTaxFilter === 'con_iva' ? formatter.format(selectedBreakdown.ivaAmt) : 'Exento'}
@@ -1645,9 +1707,90 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
                   })()}
                 </AnimatePresence>
 
+                {/* Ingreso de Presupuesto Manual */}
+                <div className="flex flex-col gap-1.5 mb-4">
+                  <div className="flex justify-between items-center px-1">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-750 dark:text-gray-300 ml-3">Presupuesto Propuesto (Opcional)</label>
+                    <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">Ingresá el monto deseado</span>
+                  </div>
+                  
+                  <div className="relative">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none select-none">
+                      <Banknote size={15} className="text-gray-700 dark:text-gray-300" />
+                      <span className="font-extrabold text-sm text-gray-700 dark:text-gray-300">$</span>
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={customBudgetDisplayValue}
+                      onChange={(e) => {
+                        const sanitized = e.target.value.replace(/\D/g, '');
+                        const numeric = sanitized ? parseInt(sanitized, 10) : 0;
+                        setCustomBudgetDisplayValue(sanitized ? new Intl.NumberFormat('es-AR').format(numeric) : '');
+                        handleBasePriceChange(numeric);
+                      }}
+                      placeholder="Ej: 50.000 (Monto en números)"
+                      className="w-full h-11 pl-12 pr-4 bg-bg-secondary dark:bg-black/10 rounded-[16px] border border-gray-150 dark:border-gray-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-bold text-xs transition-all text-text-main placeholder:text-gray-650 dark:placeholder:text-gray-400"
+                    />
+                  </div>
+
+                  {/* Preset Values Quick Tags */}
+                  <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-1">
+                    {[15000, 30000, 50000, 80000, 120000].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => {
+                          setCustomBudgetDisplayValue(new Intl.NumberFormat('es-AR').format(preset));
+                          handleBasePriceChange(preset);
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-[10px] font-extrabold transition-all border active:scale-95 shrink-0 ${
+                          analysisResult?.numericBasePrice === preset
+                            ? 'bg-primary border-primary text-white shadow-soft font-black'
+                            : 'bg-bg-secondary dark:bg-black/15 border-transparent text-gray-700 dark:text-gray-300 hover:border-gray-250 dark:hover:border-gray-700'
+                        }`}
+                      >
+                        ${new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0 }).format(preset)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Plazo de Realización Selection */}
+                <div className="flex flex-col gap-1.5 mb-3">
+                  <div className="flex justify-between items-center px-1">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-750 dark:text-gray-300 ml-3">Plazo de Realización Esperado</label>
+                    <span className="text-[9px] bg-indigo-150 dark:bg-indigo-950/40 text-indigo-800 dark:text-indigo-300 px-2 py-0.5 rounded-full font-bold">¿Cuándo necesitás el trabajo?</span>
+                  </div>
+                  <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-1">
+                    {[
+                      { id: 'En el día', label: 'En el día' },
+                      { id: '2 días', label: '2 días' },
+                      { id: '3 días', label: '3 días' },
+                      { id: '1 semana', label: '1 semana' },
+                      { id: 'A convenir', label: 'A convenir' }
+                    ].map((timeOpt) => (
+                      <button
+                        key={timeOpt.id}
+                        type="button"
+                        onClick={() => setTimeframe(timeOpt.id)}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border active:scale-95 shrink-0 flex items-center gap-1.5 ${
+                          timeframe === timeOpt.id
+                            ? 'bg-primary border-primary text-white shadow-soft font-black'
+                            : 'bg-bg-secondary dark:bg-black/15 border-transparent text-gray-700 dark:text-gray-300 hover:border-gray-250 dark:hover:border-gray-700'
+                        }`}
+                      >
+                        <Clock size={12} className={timeframe === timeOpt.id ? "text-white" : "text-gray-600 dark:text-gray-400"} />
+                        {timeOpt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* Payment Methods Selection */}
                 <div className="flex flex-col gap-1.5 mb-1">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted ml-3 opacity-50">Formas de Pago Aceptadas</label>
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-750 dark:text-gray-300 ml-3">Formas de Pago Aceptadas</label>
                   <div className="flex gap-2">
                     {[
                       { id: 'Efectivo', icon: Banknote, label: 'Efectivo' },
@@ -1665,10 +1808,10 @@ export default function ReportProblem({ onProfileClick, onSuccess }: { onProfile
                         className={`flex-1 h-11 rounded-[16px] flex items-center justify-center gap-2 font-bold text-xs transition-all border-2 active:scale-95 ${
                           paymentMethods.includes(pm.id)
                             ? 'bg-primary/5 border-primary text-primary shadow-soft'
-                            : 'bg-bg-secondary border-transparent text-text-muted hover:border-gray-200 dark:hover:border-gray-700'
+                            : 'bg-bg-secondary border-transparent text-gray-700 dark:text-gray-300 hover:border-gray-200 dark:hover:border-gray-700'
                         }`}
                       >
-                        <pm.icon size={16} className={paymentMethods.includes(pm.id) ? "text-primary" : "text-text-muted"} />
+                        <pm.icon size={16} className={paymentMethods.includes(pm.id) ? "text-primary" : "text-gray-600 dark:text-gray-400"} />
                         {pm.label}
                       </button>
                     ))}

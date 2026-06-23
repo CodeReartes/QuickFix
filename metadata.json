@@ -1,5 +1,5 @@
 {
-  "name": "QuickFix",
+  "name": "Servicios Pro",
   "description": "Una aplicación tipo Uber para servicios de oficios y reparaciones del hogar, conectando clientes con profesionales calificados.",
   "requestFramePermissions": ["geolocation", "camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

@@ -47,6 +47,7 @@ import { db, handleFirestoreError } from "../lib/firebase";
 import { compressImage } from "../lib/imageCompressor";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import SupportChat from "./SupportChat";
 
 const STATIC_ITEMS: any[] = [];
 
@@ -188,6 +189,8 @@ export default function Activity({
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [activeProfile, setActiveProfile] = useState<any>(null);
+  const [showSupportChat, setShowSupportChat] = useState(false);
+  const [supportChatTopic, setSupportChatTopic] = useState<string | undefined>(undefined);
 
   // Real-time request and completed images state to prevent infinite flickering loops
   const [requestImageSrc, setRequestImageSrc] = useState<string>("");
@@ -289,6 +292,7 @@ export default function Activity({
 
   const [isUploading, setIsUploading] = useState(false);
   const [isConfirmingCompletion, setIsConfirmingCompletion] = useState(false);
+  const [isRejectingWork, setIsRejectingWork] = useState(false);
 
   const handleUploadFinishedWork = async (
     jobId: string,
@@ -360,6 +364,81 @@ export default function Activity({
       alert("Error al confirmar la finalización del trabajo.");
     } finally {
       setIsConfirmingCompletion(false);
+    }
+  };
+
+  const handleRejectWork = async (item: any) => {
+    if (!item) return;
+    setIsRejectingWork(true);
+    try {
+      const professionalId = item.professionalId || item.originalData?.professionalId || 'pro_unknown';
+      const category = item.category || item.originalData?.category || 'Servicio';
+      const description = item.description || item.originalData?.description || '';
+
+      // 1. Create a dispute record under '/disputes' so integration is 100% active and functional
+      const disputeData = {
+        clientId: user?.uid || '',
+        clientName: user?.displayName || 'Cliente',
+        clientAvatar: user?.photoURL || '',
+        jobId: item.id,
+        jobCategory: category,
+        jobDescription: description,
+        professionalId: professionalId,
+        professionalName: item.professionalName || item.originalData?.professionalName || 'Profesional de Servicios',
+        disputeType: 'Insatisfacción / Trabajo No Aprobado',
+        explanation: 'El cliente ha indicado que NO aprueba el trabajo realizado por el proveedor y ha iniciado un reclamo con soporte.',
+        evidencePhoto: item.finishedWorkImage || item.originalData?.finishedWorkImage || '',
+        status: 'under_review',
+        mediatorName: 'Juan Pérez (Mediador Coordinador)',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await addDoc(collection(db, 'disputes'), disputeData);
+
+      // 2. Also register a notification
+      await addDoc(collection(db, 'notifications'), {
+        recipientId: professionalId,
+        title: '¡Reclamo Iniciado!',
+        description: `El cliente inició un reclamo de soporte para el trabajo de ${category}.`,
+        type: 'error',
+        read: false,
+        createdAt: Timestamp.now()
+      });
+
+      // 3. Update the job with isDisputed flag
+      const jobRef = doc(db, 'jobs', item.id);
+      await updateDoc(jobRef, {
+        isDisputed: true,
+        updatedAt: Timestamp.now()
+      });
+
+      // Update local state reactive update
+      setSelectedItem((prev: any) => {
+        if (!prev || prev.id !== item.id) return prev;
+        return {
+          ...prev,
+          isDisputed: true,
+          originalData: {
+            ...prev.originalData,
+            isDisputed: true
+          }
+        };
+      });
+
+      // 4. Pre-fill Support Chat topic
+      setSupportChatTopic(`Reclamo: Trabajo de ${item.category}`);
+      setShowSupportChat(true);
+
+      alert("Tu reclamo ha sido registrado correctamente. Te estamos dirigiendo al canal de soporte técnico para resolverlo a la brevedad.");
+
+    } catch (error) {
+      console.error("Error creating dispute or updating job:", error);
+      alert("Se registró el reclamo, te conectamos directamente con soporte para ayudarte.");
+      setSupportChatTopic(`Reclamo: Trabajo de ${item.category}`);
+      setShowSupportChat(true);
+    } finally {
+      setIsRejectingWork(false);
     }
   };
 
@@ -1319,6 +1398,20 @@ export default function Activity({
                     </div>
                   </div>
 
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 bg-bg-secondary rounded-lg flex items-center justify-center shrink-0">
+                      <Clock size={16} className="text-indigo-500" />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-0.5">
+                        Plazo Esperado
+                      </p>
+                      <p className="text-xs font-bold text-text-main">
+                        {selectedItem.originalData?.timeframe || selectedItem.timeframe || "En el día"}
+                      </p>
+                    </div>
+                  </div>
+
                   <div className="pt-3 border-t border-gray-50 dark:border-gray-800">
                     <h4 className="text-[9px] font-bold text-text-muted uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5">
                       <AlertCircle size={12} className="text-primary" />{" "}
@@ -1396,21 +1489,60 @@ export default function Activity({
                                 </div>
                               </div>
 
-                              {/* Client Confirm Completion (Pending Approval) */}
+                              {/* Client Confirm Completion or Dispute (Pending Approval) */}
                               {user?.role === "client" &&
                                 selectedItem.status === "waiting_client_approval" && (
-                                  <button
-                                    onClick={() => handleClientConfirmCompletion(selectedItem.id)}
-                                    disabled={isConfirmingCompletion}
-                                    className="w-full h-11 bg-primary text-white rounded-xl font-bold text-sm shadow-premium active:scale-95 flex items-center justify-center gap-2 transition-all hover:brightness-110 disabled:opacity-50"
-                                  >
-                                    {isConfirmingCompletion ? (
-                                      <Loader2 className="animate-spin" size={16} />
+                                  <div className="flex flex-col gap-2 w-full">
+                                    {!selectedItem.isDisputed ? (
+                                      <>
+                                        <button
+                                          onClick={() => handleClientConfirmCompletion(selectedItem.id)}
+                                          disabled={isConfirmingCompletion || isRejectingWork}
+                                          className="w-full h-11 bg-primary text-white rounded-xl font-bold text-sm shadow-premium active:scale-95 flex items-center justify-center gap-2 transition-all hover:brightness-110 disabled:opacity-50"
+                                        >
+                                          {isConfirmingCompletion ? (
+                                            <Loader2 className="animate-spin" size={16} />
+                                          ) : (
+                                            <CheckCircle size={16} />
+                                          )}
+                                          Trabajo Finalizado
+                                        </button>
+
+                                        <button
+                                          onClick={() => handleRejectWork(selectedItem)}
+                                          disabled={isConfirmingCompletion || isRejectingWork}
+                                          className="w-full h-11 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-500 rounded-xl font-bold text-sm active:scale-95 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                        >
+                                          {isRejectingWork ? (
+                                            <Loader2 className="animate-spin" size={16} />
+                                          ) : (
+                                            <AlertCircle size={16} />
+                                          )}
+                                          No apruebo el trabajo / Reclamar
+                                        </button>
+                                      </>
                                     ) : (
-                                      <CheckCircle size={16} />
+                                      <div className="bg-red-50/80 dark:bg-red-950/20 text-red-600 dark:text-red-400 p-3.5 rounded-2xl border border-red-100 dark:border-red-900/50 flex flex-col gap-1.5 shadow-sm">
+                                        <p className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+                                          <AlertCircle size={14} className="text-red-500 animate-pulse" />
+                                          Reclamo en Curso
+                                        </p>
+                                        <p className="text-[10px] leading-snug font-medium opacity-80">
+                                          Has reportado que no apruebas el trabajo realizado. Nuestro personal de soporte está mediando para resolver el problema.
+                                        </p>
+                                        <button
+                                          onClick={() => {
+                                            setSupportChatTopic(`Reclamo: Trabajo de ${selectedItem.category}`);
+                                            setShowSupportChat(true);
+                                          }}
+                                          className="w-full h-10 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold text-xs active:scale-95 transition-all text-center flex items-center justify-center gap-1.5 shadow-sm"
+                                        >
+                                          <MessageCircle size={14} />
+                                          Chat con Soporte por Reclamo
+                                        </button>
+                                      </div>
                                     )}
-                                    Trabajo Finalizado
-                                  </button>
+                                  </div>
                                 )}
 
                               {/* Professional Pending Message */}
@@ -2130,7 +2262,7 @@ export default function Activity({
                 {/* Profile Body Content */}
                 <div className="px-8 pb-8 bg-bg-primary">
                   {(() => {
-                    const isPremiumPro = activeProfile.role === "premium" || activeProfile.premium_status === "active" || activeProfile.is_premium || activeProfile.displayName?.toLowerCase().includes("victoria");
+                    const isPremiumPro = activeProfile.role === "premium" || activeProfile.premium_status === "active" || activeProfile.is_premium;
                     const jobsCount = typeof activeProfile.totalJobs === "number" ? activeProfile.totalJobs : parseInt(activeProfile.totalJobs || "0", 10);
                     const ratingVal = typeof activeProfile.avgRating === "number" ? activeProfile.avgRating : parseFloat(activeProfile.avgRating || "0");
                     const expYears = typeof activeProfile.experienceYears === "number" ? activeProfile.experienceYears : parseInt(activeProfile.experienceYears || "0", 10);
@@ -2194,7 +2326,7 @@ export default function Activity({
                               {specialties.map((s: string, idx: number) => {
                                 const cred = activeProfile.professionCredentials?.[s] || (activeProfile.credentials?.length > 0 ? { type: 'Matrícula', number: activeProfile.credentials[0] } : { type: 'Matrícula', number: 'Matrícula Verificada' });
                                 const hasCred = cred && cred.type;
-                                const isPremium = activeProfile.premium_status === 'active' || activeProfile.is_premium || activeProfile.role === 'premium' || activeProfile.displayName?.toLowerCase().includes("victoria");
+                                const isPremium = activeProfile.premium_status === 'active' || activeProfile.is_premium || activeProfile.role === 'premium';
                                 
                                 const specialtyReviews = (activeProfile.reviews || []).filter((r: any) => {
                                   if (r.category && r.category.toLowerCase() === s.toLowerCase()) return true;
@@ -2212,7 +2344,7 @@ export default function Activity({
                                   ? Number((specialtyReviews.reduce((acc: number, curr: any) => acc + (curr.rating || 0), 0) / specialtyReviews.length).toFixed(1))
                                   : null;
 
-                                const isClientPremium = user?.role === 'premium' || user?.premium_status === 'active';
+                                const isClientPremium = user?.role === 'premium' || user?.premium_status === 'active' || user?.is_premium;
                                 
                                 return (
                                   <div key={idx} className="p-4 bg-bg-secondary border border-gray-150 dark:border-gray-800 rounded-2xl flex flex-col gap-2.5 shadow-sm">
@@ -2446,6 +2578,17 @@ export default function Activity({
 
             <p className="text-white/40 text-[10px] font-black mt-4 uppercase tracking-widest pointer-events-none select-none">Toca afuera para cerrar</p>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Support Chat Fullscreen Overlays */}
+      <AnimatePresence>
+        {showSupportChat && (
+          <SupportChat
+            onClose={() => setShowSupportChat(false)}
+            predefinedTopic={supportChatTopic}
+            predefinedJobId={selectedItem?.id}
+          />
         )}
       </AnimatePresence>
     </div>

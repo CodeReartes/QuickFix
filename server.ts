@@ -96,24 +96,60 @@ async function startServer() {
         }
       });
 
-      const prompt = `Actúa como el motor de inteligencia artificial y localización para "Servicios Pro", una plataforma argentina que conecta clientes con profesionales de oficios (gasistas, plomeros, electricistas, cerrajeros, albañiles, pintores).
-Analiza la imagen enviada que muestra una avería doméstica. Extrae la información técnica con mucha precisión y tradúcela a términos familiares del lunfardo y slang hogareño argentino.
+      const prompt = `Eres el Motor de Diagnóstico y Cotización de Inteligencia Artificial para "QuickFix", una app argentina que conecta clientes con profesionales del hogar. Tu objetivo es analizar el problema reportado por el usuario a través de la imagen, diagnosticar la posible falla, identificar al profesional adecuado y emitir un presupuesto estimado basado en la tabla de tarifas oficiales de 2026.
 
-Instrucciones:
-1. Categoría Asignada: Mapea la falla exactamente a una de estas seis categorías válidas en español: "Electricista", "Plomero", "Gasista", "Albañil", "Pintor", "Cerrajero".
-2. Nivel de Urgencia: Elige entre "Baja", "Media", o "Alta - Urgente" según corresponda.
-3. Detalle de la Solicitud (Slang): Escribe la falla con un término típico que diría un cliente en un hogar en Argentina (ej. canilla perdiendo -> "Pérdida en el cuerito", llave térmica quemada -> "Llave térmica saltada", revoque caído -> "Pared descascarada para revoque", cerradura trabada -> "Cerradura trabada" o "Pomo roto").
-4. Descripción Técnica: Describe el problema detallado que ves de forma objetiva y profesional.
-5. Precio Base: Estima un precio de referencia base realista en pesos argentinos (ARS) para el año 2026. Debe ser un número entero (ej. entre 20000 y 90000 ARS).
+### REGLAS DE NEGOCIO Y COTIZACIÓN:
+1. COSTO DE GESTIÓN: A todos los presupuestos de mano de obra base se les debe sumar un 10% en concepto de "Costo de Gestión" de la app.
+2. URGENCIAS: Si notas que es una emergencia inmediata (ej. cortocircuito grave, fuga de gas, caño roto inundando), aplica un recargo del 50% al valor de la mano de obra.
+3. VISITA TÉCNICA: Si el problema es ambiguo, cotiza únicamente el valor de la "Visita técnica para diagnóstico".
+4. MATERIALES: La IA solo cotiza "Mano de Obra". Debe aclarar que los materiales no están incluidos en el precio base.
 
-Formato de Respuesta de Salida: Debes generar obligatoriamente un JSON válido con esta estructura:
-{
-  "category": "Electricista" | "Plomero" | "Gasista" | "Albañil" | "Pintor" | "Cerrajero",
-  "urgency": "Baja" | "Media" | "Alta - Urgente",
-  "slangDescription": string (lunfardo o terminología doméstica argentina),
-  "description": string (explicación técnica del daño),
-  "numericBasePrice": number (número entero sin signos ni puntos, ej. 45000)
-}`;
+### TABLA DE TARIFAS BASE (MANO DE OBRA NETO EN ARS - 2026):
+
+[ELECTRICISTA]
+- Visita técnica para diagnóstico: $25.000 - $46.000
+- Reparación de cortocircuitos simples: $57.900 - $91.800
+- Instalación de boca eléctrica: $28.000 - $47.000
+- Instalación eléctrica dedicada (aire ac/térmica): $43.000 - $75.500
+- Instalación termotanque eléctrico: $53.000 - $135.000
+- Armado tablero monofásico principal: $150.000 - $314.000
+
+[PLOMERO]
+- Visita diagnóstico / Detección filtraciones: $19.000 - $84.000
+- Cambio sifón bajo mesada: $20.000 - $30.000
+- Reemplazo grifería completa: $30.000 - $50.000
+- Instalación inodoro/bidet: $27.000 - $50.000
+- Destapaciones estándar: $30.000 - $52.000
+- Instalación bomba presurizadora: $54.000 - $109.000
+
+[CLIMATIZACIÓN / AIRE ACONDICIONADO]
+- Instalación Split (Hasta 3000 fg): $90.000 - $175.000
+- Mantenimiento/Limpieza: $47.000 - $128.000
+- Carga de gas (R410/R22): $48.000 - $91.000
+
+[GASISTA MATRICULADO]
+- Visita inspección visual/seguridad: $30.000 - $58.000
+- Prueba hermeticidad (fugas): $64.000 - $123.000
+- Instalación cocina a gas: $90.000 - $132.000
+- Instalación calefón/termotanque a gas: $108.000 - $162.000
+
+*(Si detectas Carpinteros, Herreros, Durleros o Vidrieros, indica "A convenir tras visita técnica").*
+
+Formato de Respuesta de Salida: Debes generar obligatoriamente un JSON válido.
+En el campo "description" EXACTAMENTE este texto en formato Markdown sin alteraciones estructurales:
+
+**Profesional Requerido:** [Ej. Electricista]
+**Diagnóstico con IA:** [Explicación técnica breve del problema reportado]
+**Nivel de Urgencia:** [Estándar / Alta]
+**Desglose Financiero Estimado:**
+- Mano de Obra Base (Neto): $ [Valor Promedio de la tabla]
+- Costo de Gestión (10%): $ [Calcula el 10% de la mano de obra]
+- Recargo por Urgencia: $ [0 si es estándar, o el 50% si es Alta]
+- **TOTAL FACTURADO ESTIMADO:** $ [Suma de los anteriores]
+
+**Aclaración importante:** Este valor corresponde a la mano de obra. Los materiales necesarios serán informados por el profesional tras la revisión. Tu pago está protegido por QuickFix hasta que confirmes la finalización del trabajo.
+
+El campo "numericBasePrice" debe tener el "Mano de Obra Base (Neto)" como número entero.`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
@@ -135,26 +171,26 @@ Formato de Respuesta de Salida: Debes generar obligatoriamente un JSON válido c
             properties: {
               category: {
                 type: Type.STRING,
-                description: "Oficio requerido: 'Electricista', 'Plomero', 'Gasista', 'Albañil', 'Pintor', 'Cerrajero'",
+                description: "Oficio requerido basado en la tabla",
               },
               urgency: {
                 type: Type.STRING,
-                description: "Nivel de urgencia: 'Baja', 'Media', 'Alta - Urgente'",
-              },
-              slangDescription: {
-                type: Type.STRING,
-                description: "Slang o frase típica argentina que describe el desperfecto doméstico",
+                description: "Estándar o Alta",
               },
               description: {
                 type: Type.STRING,
-                description: "Explicación breve del desperfecto",
+                description: "Formato de texto con toda la cotización y desglose como se indica en las instrucciones.",
+              },
+              slangDescription: {
+                type: Type.STRING,
+                description: "Slang argentino descriptivo",
               },
               numericBasePrice: {
                 type: Type.INTEGER,
-                description: "Estimated base total price in ARS for the job as a clean plain integer (e.g. 45000)",
+                description: "Mano de Obra Base (Neto) en formato numerico entero",
               },
             },
-            required: ["category", "urgency", "slangDescription", "description", "numericBasePrice"],
+            required: ["category", "urgency", "description", "slangDescription", "numericBasePrice"],
           },
         },
       });
@@ -178,7 +214,18 @@ Formato de Respuesta de Salida: Debes generar obligatoriamente un JSON válido c
       });
     } catch (err: any) {
       console.error("Error in server-side image analysis:", err);
-      res.status(500).json({ error: "Fallo en el servidor al evaluar la imagen", details: err?.message || "" });
+      const fallbackPrice = 30000;
+      const formattedFallbackPrice = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(fallbackPrice);
+      
+      res.json({
+        category: "Desconocido",
+        urgency: "Media",
+        slangDescription: "Falla no identificada",
+        description: "**Profesional Requerido:** A presupuestar\n**Diagnóstico con IA:** No pudimos procesar la imagen debido a alta demanda. Describe tu problema manualmente o intenta nuevamente.\n**Nivel de Urgencia:** Media\n**Desglose Financiero Estimado:**\n- Mano de Obra Base: $30.000\n- Costo de Gestión: $3.000\n- Recargo por Urgencia: $0\n- **TOTAL FACTURADO EST.:** $33.000\n\n**Aclaración:** Materiales no incluidos.",
+        estimatedPrice: formattedFallbackPrice,
+        numericBasePrice: fallbackPrice,
+        breakdowns: calculateBreakdowns(fallbackPrice)
+      });
     }
   });
 
@@ -191,9 +238,16 @@ Formato de Respuesta de Salida: Debes generar obligatoriamente un JSON válido c
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      console.warn("GEMINI_API_KEY is not defined. Returning offline placeholder.");
+      console.warn("GEMINI_API_KEY is not defined.");
+      const fallbackPrice = 35000;
       return res.json({
-        enhancedText: `Solicitud de servicio de ${category || 'oficios'}: ${keywords}. (Modo simulación sin API Key)`
+        category: category || "Plomero",
+        urgency: "Media",
+        slangDescription: keywords,
+        description: `**Profesional Requerido:** ${category}\n**Diagnóstico con IA:** ${keywords}\n**Nivel de Urgencia:** Media\n**Desglose Financiero Estimado:**\n- Mano de Obra Base: $35.000\n- Costo de Gestión: $3.500\n- Recargo por Urgencia: $0\n- **TOTAL FACTURADO:** $38.500\n\n**Aclaración:** Materiales no incluidos.`,
+        estimatedPrice: "$35.000 ARS",
+        numericBasePrice: fallbackPrice,
+        breakdowns: calculateBreakdowns(fallbackPrice)
       });
     }
 
@@ -207,27 +261,130 @@ Formato de Respuesta de Salida: Debes generar obligatoriamente un JSON válido c
         }
       });
 
-      const prompt = `Actúas como un asistente de redacción inteligente para la aplicación "Servicios Pro" en Argentina. El usuario necesita ayuda para describirle a un profesional de oficios su problema a partir de pocas palabras clave.
-Escribe un texto claro, conciso, descriptivo y amigable en español argentino de nivel doméstico/lunfardo y técnico básico combinados, para que el plomero, electricista, gasista, etc. entienda perfectamente qué debe resolver en la casa del cliente.
+      const prompt = `Eres el Motor de Diagnóstico y Cotización de Inteligencia Artificial para "QuickFix", una app argentina que conecta clientes con profesionales del hogar. Tu objetivo es analizar el problema reportado por el usuario usando descripción de texto, diagnosticar la posible falla, identificar al profesional adecuado y emitir un presupuesto estimado basado en la tabla de tarifas oficiales de 2026.
 
-Palabras clave del usuario: "${keywords}"
-Rubro del profesional: "${category || 'General'}"
+### REGLAS DE NEGOCIO Y COTIZACIÓN:
+1. COSTO DE GESTIÓN: A todos los presupuestos de mano de obra base se les debe sumar un 10% en concepto de "Costo de Gestión" de la app.
+2. URGENCIAS: Si notas que es una emergencia inmediata (ej. cortocircuito grave, fuga de gas, caño roto inundando), aplica un recargo del 50% al valor de la mano de obra.
+3. VISITA TÉCNICA: Si el problema es ambiguo, cotiza únicamente el valor de la "Visita técnica para diagnóstico".
+4. MATERIALES: La IA solo cotiza "Mano de Obra". Debe aclarar que los materiales no están incluidos en el precio base.
 
-Genera únicamente un texto redactado en un párrafo directo de no más de 120 palabras, listo para pegarse en el formulario. No agregues saludos, explicaciones externas ni introducciones, sé directo y ve al grano con la avería concreta como la redactaría un cliente.`;
+### TABLA DE TARIFAS BASE (MANO DE OBRA NETO EN ARS - 2026):
+
+[ELECTRICISTA]
+- Visita técnica para diagnóstico: $25.000 - $46.000
+- Reparación de cortocircuitos simples: $57.900 - $91.800
+- Instalación de boca eléctrica: $28.000 - $47.000
+- Instalación eléctrica dedicada (aire ac/térmica): $43.000 - $75.500
+- Instalación termotanque eléctrico: $53.000 - $135.000
+- Armado tablero monofásico principal: $150.000 - $314.000
+
+[PLOMERO]
+- Visita diagnóstico / Detección filtraciones: $19.000 - $84.000
+- Cambio sifón bajo mesada: $20.000 - $30.000
+- Reemplazo grifería completa: $30.000 - $50.000
+- Instalación inodoro/bidet: $27.000 - $50.000
+- Destapaciones estándar: $30.000 - $52.000
+- Instalación bomba presurizadora: $54.000 - $109.000
+
+[CLIMATIZACIÓN / AIRE ACONDICIONADO]
+- Instalación Split (Hasta 3000 fg): $90.000 - $175.000
+- Mantenimiento/Limpieza: $47.000 - $128.000
+- Carga de gas (R410/R22): $48.000 - $91.000
+
+[GASISTA MATRICULADO]
+- Visita inspección visual/seguridad: $30.000 - $58.000
+- Prueba hermeticidad (fugas): $64.000 - $123.000
+- Instalación cocina a gas: $90.000 - $132.000
+- Instalación calefón/termotanque a gas: $108.000 - $162.000
+
+*(Si detectas Carpinteros, Herreros, Durleros o Vidrieros, indica "A convenir tras visita técnica").*
+
+### Solicitud de texto del usuario:
+Palabras clave o descripción: "${keywords}"
+Rubro del profesional preferido: "${category || 'General'}"
+
+Formato de Respuesta de Salida: Debes generar obligatoriamente un JSON válido.
+En el campo "description" EXACTAMENTE este texto en formato Markdown sin alteraciones estructurales:
+
+**Profesional Requerido:** [Ej. Electricista]
+**Diagnóstico con IA:** [Explicación técnica breve del problema reportado]
+**Nivel de Urgencia:** [Estándar / Alta]
+**Desglose Financiero Estimado:**
+- Mano de Obra Base (Neto): $ [Valor Promedio de la tabla]
+- Costo de Gestión (10%): $ [Calcula el 10% de la mano de obra]
+- Recargo por Urgencia: $ [0 si es estándar, o el 50% si es Alta]
+- **TOTAL FACTURADO ESTIMADO:** $ [Suma de los anteriores]
+
+**Aclaración importante:** Este valor corresponde a la mano de obra. Los materiales necesarios serán informados por el profesional tras la revisión. Tu pago está protegido por QuickFix hasta que confirmes la finalización del trabajo.
+
+El campo "numericBasePrice" debe tener el "Mano de Obra Base (Neto)" como número entero.`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
-        contents: prompt
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              category: {
+                type: Type.STRING,
+                description: "Oficio requerido basado en la tabla",
+              },
+              urgency: {
+                type: Type.STRING,
+                description: "Estándar o Alta",
+              },
+              description: {
+                type: Type.STRING,
+                description: "Formato de texto con toda la cotización y desglose como se indica en las instrucciones.",
+              },
+              slangDescription: {
+                type: Type.STRING,
+                description: "Breve frase descriptiva del trabajo.",
+              },
+              numericBasePrice: {
+                type: Type.INTEGER,
+                description: "Mano de Obra Base (Neto) en formato numerico entero",
+              },
+            },
+            required: ["category", "urgency", "description", "slangDescription", "numericBasePrice"],
+          },
+        },
       });
 
       if (!response.text) {
         throw new Error("Respuesta vacía de Gemini.");
       }
 
-      res.json({ enhancedText: response.text.trim() });
+      const result = JSON.parse(response.text.trim());
+      const basePrice = result.numericBasePrice || 35000;
+      const formattedPrice = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(basePrice);
+
+      res.json({
+        category: result.category,
+        urgency: result.urgency,
+        slangDescription: result.slangDescription,
+        description: result.description,
+        estimatedPrice: formattedPrice,
+        numericBasePrice: basePrice,
+        breakdowns: calculateBreakdowns(basePrice)
+      });
     } catch (err: any) {
-      console.error("Error in server-side text enhancement:", err);
-      res.status(500).json({ error: "Error de servidor al enriquecer texto" });
+      console.error("Error in server-side text analysis:", err);
+      const fallbackPrice = 30000;
+      const formattedFallbackPrice = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(fallbackPrice);
+      
+      res.json({
+        category: "Desconocido",
+        urgency: "Media",
+        slangDescription: keywords || "Problema a revisar",
+        description: "**Profesional Requerido:** A presupuestar\n**Diagnóstico con IA:** No pudimos analizar tu descripción debido a alta demanda. Continúa o intenta nuevamente.\n**Nivel de Urgencia:** Media\n**Desglose Financiero Estimado:**\n- Mano de Obra Base: $30.000\n- Costo de Gestión: $3.000\n- Recargo por Urgencia: $0\n- **TOTAL FACTURADO EST.:** $33.000\n\n**Aclaración:** Materiales no incluidos.",
+        estimatedPrice: formattedFallbackPrice,
+        numericBasePrice: fallbackPrice,
+        breakdowns: calculateBreakdowns(fallbackPrice)
+      });
     }
   });
 

@@ -6,10 +6,10 @@ import { collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot,
 import { db, handleFirestoreError } from '../lib/firebase';
 import { Message } from '../types';
 
-export default function SupportChat({ onClose, predefinedTopic }: { onClose: () => void, predefinedTopic?: string }) {
+export default function SupportChat({ onClose, predefinedTopic, predefinedJobId }: { onClose: () => void, predefinedTopic?: string, predefinedJobId?: string }) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<any[]>([]);
-  const [topic, setTopic] = useState<string | null>(predefinedTopic || null);
+  const [topic, setTopic] = useState<string | null>(predefinedTopic || (predefinedJobId ? 'Problema con un trabajo' : null));
   const [jobs, setJobs] = useState<any[]>([]);
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
   const [newMessage, setNewMessage] = useState('');
@@ -49,6 +49,13 @@ export default function SupportChat({ onClose, predefinedTopic }: { onClose: () 
         const jobsSnap = await getDocs(jobsQ);
         const userJobs = jobsSnap.docs.map(d => ({id: d.id, ...d.data()}));
         setJobs(userJobs);
+
+        if (predefinedJobId) {
+          const found = userJobs.find(j => j.id === predefinedJobId);
+          if (found) {
+            setSelectedJob(found);
+          }
+        }
       } catch (e) {
         handleFirestoreError(e, 'get' as any, 'support_requests');
       }

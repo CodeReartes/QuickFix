@@ -9,6 +9,7 @@ interface FormState {
   location: { lat: number; lng: number } | null;
   priority: 'normal' | 'urgent' | null;
   paymentMethods: string[];
+  timeframe?: string;
   analysisResult: { 
     category: string; 
     matchedId: string | null; 
@@ -42,6 +43,7 @@ const initialFormState: FormState = {
   location: null,
   priority: null,
   paymentMethods: ['Efectivo'], // Default to cash
+  timeframe: 'En el día',
   analysisResult: null,
 };
 

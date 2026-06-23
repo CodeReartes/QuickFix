@@ -25,6 +25,8 @@ export interface User {
   extra_garantias?: number;
   cancel_at?: any;
   twoFactorEnabled?: boolean;
+  basePrice?: number;
+  price?: string;
   recharge_request?: {
     amount: number;
     screenshot: string;

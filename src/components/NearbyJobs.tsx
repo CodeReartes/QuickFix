@@ -1947,6 +1947,15 @@ export default function NearbyJobs({
                         </div>
                       </div>
                     </div>
+
+                    {/* Plazo del Trabajo */}
+                    <div className="mt-3 pt-3 border-t border-gray-50 flex justify-between items-center">
+                      <p className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-0">Plazo Esperado</p>
+                      <div className="inline-flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/20 px-2.5 py-1 rounded-lg border border-indigo-100 dark:border-indigo-900 text-indigo-600 dark:text-indigo-400">
+                        <Clock size={11} className="shrink-0" />
+                        <span className="text-[10px] font-black uppercase tracking-wider">{selectedJob.timeframe || 'En el día'}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 

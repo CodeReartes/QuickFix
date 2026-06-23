@@ -34,7 +34,7 @@ export default function DisputeMediation({ onClose }: DisputeMediationProps) {
   const [reassigning, setReassigning] = useState(false);
   const [reassignSuccess, setReassignSuccess] = useState(false);
 
-  const isPremium = user?.role === 'premium' || user?.is_premium || user?.premium_status === 'active' || user?.displayName?.toLowerCase().includes('victoria');
+  const isPremium = user?.role === 'premium' || user?.is_premium || user?.premium_status === 'active';
   const points = user?.client_points ?? 0;
 
   // Real-time disputes & fetch jobs

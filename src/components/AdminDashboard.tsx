@@ -26,7 +26,7 @@ export default function AdminDashboard({ onSignOut, onSwitchMode }: { onSignOut:
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const usersData: User[] = [];
       snapshot.forEach((doc) => {
-        usersData.push(doc.data() as User);
+        usersData.push({ uid: doc.id, ...doc.data() } as unknown as User);
       });
       setUsers(usersData);
     }, (error) => {
@@ -99,6 +99,38 @@ export default function AdminDashboard({ onSignOut, onSwitchMode }: { onSignOut:
       });
     } catch (e) {
       console.error("Error toggling account block status", e);
+    }
+  };
+
+  const handleTogglePremium = async (user: any) => {
+    const isPremium = user.role === 'premium' || user.is_premium || user.premium_status === 'active';
+
+    if (isPremium) {
+      try {
+        const updates: any = {
+          premium_status: 'none',
+          is_premium: false
+        };
+        // Reset role only if it was unfortunately set to premium before
+        if (user.role === 'premium') {
+          updates.role = user.professions ? 'professional' : 'client';
+        }
+        await updateDoc(doc(db, 'users', user.uid || (user as any).id), updates);
+      } catch (e) {
+        console.error("Error revoking premium status", e);
+        alert("Hubo un error al intentar quitar la suscripción: " + (e as any).message);
+      }
+    } else {
+      try {
+        const updates: any = {
+          premium_status: 'active',
+          is_premium: true
+        };
+        await updateDoc(doc(db, 'users', user.uid || (user as any).id), updates);
+      } catch (e) {
+        console.error("Error granting premium status", e);
+        alert("Hubo un error al intentar otorgar la suscripción: " + (e as any).message);
+      }
     }
   };
 
@@ -438,22 +470,38 @@ export default function AdminDashboard({ onSignOut, onSwitchMode }: { onSignOut:
                   </div>
                 )}
                 
-                {/* Suspension controls */}
-                <div className="border-t border-gray-100 pt-3 flex justify-between items-center mt-0.5">
-                   <button 
-                    onClick={() => handleToggleActive(user.uid, user.is_blocked)}
-                    className={`text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${user.is_blocked ? 'text-success' : 'text-alert'}`}
-                   >
-                     {user.is_blocked ? <CheckCircle size={14} /> : <ShieldAlert size={14} />} 
-                     {user.is_blocked 
-                       ? (user.role === 'client' ? 'Activar Cliente' : 'Activar Profesional') 
-                       : (user.role === 'client' ? 'Suspender Cliente' : 'Suspender Profesional')}
-                   </button>
-                   {user.is_blocked && (
-                     <span className="text-[9px] font-extrabold text-alert uppercase bg-red-100/50 dark:bg-red-950/20 px-2 py-0.5 rounded">
-                       Suspendido
-                     </span>
-                   )}
+                {/* Controls */}
+                <div className="border-t border-gray-100 pt-3 flex flex-col gap-2 mt-0.5">
+                  <div className="flex justify-between items-center w-full">
+                     <button 
+                      onClick={() => handleToggleActive(user.uid || (user as any).id, user.is_blocked)}
+                      className={`text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${user.is_blocked ? 'text-success' : 'text-alert'}`}
+                     >
+                       {user.is_blocked ? <CheckCircle size={14} /> : <ShieldAlert size={14} />} 
+                       {user.is_blocked 
+                         ? (user.role === 'client' ? 'Activar Cliente' : 'Activar Profesional') 
+                         : (user.role === 'client' ? 'Suspender Cliente' : 'Suspender Profesional')}
+                     </button>
+                     {user.is_blocked && (
+                       <span className="text-[9px] font-extrabold text-alert uppercase bg-red-100/50 dark:bg-red-950/20 px-2 py-0.5 rounded">
+                         Suspendido
+                       </span>
+                     )}
+                  </div>
+                  <div className="flex justify-between items-center w-full mt-2">
+                     <button 
+                      onClick={() => handleTogglePremium(user)}
+                      className={`text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer px-3 py-1.5 rounded-lg active:scale-95 ${(user.role === 'premium' || user.is_premium || user.premium_status === 'active') ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 border border-amber-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'}`}
+                     >
+                       <BadgeCheck size={14} className={(user.role === 'premium' || user.is_premium || user.premium_status === 'active') ? "text-amber-600" : "text-gray-500"} /> 
+                       {(user.role === 'premium' || user.is_premium || user.premium_status === 'active') ? 'Quitar Premium' : 'Dar Premium'}
+                     </button>
+                     {(user.role === 'premium' || user.is_premium || user.premium_status === 'active') && (
+                       <span className="text-[9px] font-extrabold text-amber-700 uppercase bg-amber-100/50 px-2 py-0.5 rounded">
+                         Premium Activo
+                       </span>
+                     )}
+                  </div>
                 </div>
               </div>
             ))}

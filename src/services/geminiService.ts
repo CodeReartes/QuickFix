@@ -43,7 +43,7 @@ export async function analyzeProblemImage(base64Image: string, mimeType: string)
   }
 }
 
-export async function enhanceDescription(keywords: string, category: string): Promise<string> {
+export async function analyzeProblemText(keywords: string, category: string): Promise<AnalysisResult> {
   try {
     const response = await fetch("/api/gemini/enhance", {
       method: "POST",
@@ -58,10 +58,17 @@ export async function enhanceDescription(keywords: string, category: string): Pr
     }
 
     const data = await response.json();
-    return data.enhancedText || "";
+    return data;
   } catch (error) {
-    console.error("Error in enhanceDescription proxy helper:", error);
-    return `Problema de ${category}: ${keywords}`;
+    console.error("Error in text analysis proxy helper:", error);
+    return {
+      category: category || "Desconocido",
+      description: "No se pudo cotizar automáticamente. Por favor inténtalo de nuevo.",
+      estimatedPrice: "A presupuestar",
+      urgency: "Media",
+      slangDescription: keywords,
+      numericBasePrice: 20000
+    };
   }
 }
 

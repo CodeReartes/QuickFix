@@ -286,17 +286,15 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
   };
 
   const handleDisable2FA = async () => {
-    if (window.confirm('¿Seguro que deseas desactivar la Autenticación de 2 Factores? Tu cuenta perderá la capa extra de seguridad.')) {
-      try {
-        await updateProfile({
-          twoFactorEnabled: false
-        });
-        showToast('Autenticación de 2 Factores desactivada.');
-        setShowTwoFactorModal(false);
-      } catch (error) {
-        console.error('Error disabling 2FA:', error);
-        showToast('Error al procesar la solicitud.');
-      }
+    try {
+      await updateProfile({
+        twoFactorEnabled: false
+      });
+      showToast('Autenticación de 2 Factores desactivada.');
+      setShowTwoFactorModal(false);
+    } catch (error) {
+      console.error('Error disabling 2FA:', error);
+      showToast('Error al procesar la solicitud.');
     }
   };
   const [selectedProfessions, setSelectedProfessions] = useState<string[]>(user?.professions || ['Electricista']);
@@ -342,6 +340,7 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
   const [editPhone, setEditPhone] = useState(user?.phoneNumber || '');
   const [editBio, setEditBio] = useState(user?.bio || '');
   const [editExperienceYears, setEditExperienceYears] = useState(user?.experienceYears?.toString() || '');
+  const [editBasePrice, setEditBasePrice] = useState(user?.basePrice?.toString() || '');
   const [editCredentials, setEditCredentials] = useState(user?.credentials?.join('\n') || '');
   const [antecedentesUrl, setAntecedentesUrl] = useState(user?.antecedentes_url || '');
   const [taxStatus, setTaxStatus] = useState<'con_iva' | 'sin_iva'>(user?.tax_status || 'sin_iva');
@@ -771,6 +770,7 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
       setEditPhone(user?.phoneNumber || '');
       setEditBio(user?.bio || '');
       setEditExperienceYears(user?.experienceYears?.toString() || '');
+      setEditBasePrice(user?.basePrice?.toString() || '');
       setEditCredentials(user?.credentials?.join('\n') || '');
       setAntecedentesUrl(user?.antecedentes_url || '');
       setTaxStatus(user?.tax_status || 'sin_iva');
@@ -825,17 +825,15 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
   const handleCancelSubscription = async () => {
     if (!user) return;
     try {
-      // Get the last day of the current calendar month
-      const now = new Date();
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      lastDay.setHours(23, 59, 59, 999);
-      
       await updateDoc(doc(db, 'users', user.uid), {
-        premium_status: 'cancelling',
-        cancel_at: lastDay,
-        // The role stays 'premium' until the end of the month
+        premium_status: 'none',
+        is_premium: false
       });
-      showToast('Tu membresía se cancelará al finalizar el mes. Seguirás disfrutando los beneficios.');
+      if (user.role === 'premium') {
+         const newRole = user.professions ? 'professional' : 'client';
+         await updateDoc(doc(db, 'users', user.uid), { role: newRole });
+      }
+      showToast('Tu membresía ha sido cancelada.');
     } catch (err) {
       console.error('Error cancelling premium', err);
       showToast('Error al procesar la cancelación.');
@@ -843,7 +841,7 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
   };
 
   const getUserLevel = (count: number) => {
-    const isPremium = user?.role === 'premium' || user?.premium_status === 'active' || user?.is_premium || user?.displayName?.toLowerCase().includes('victoria');
+    const isPremium = user?.role === 'premium' || user?.premium_status === 'active' || user?.is_premium;
     if (isPremium) return 'Diamante';
 
     const totalPoints = count * 150;
@@ -1253,7 +1251,7 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
     premium: {
       title: 'Membresía Premium',
       content: (() => {
-        const isPremium = user?.role === 'premium' || user?.is_premium || user?.premium_status === 'active' || user?.displayName?.toLowerCase().includes('victoria');
+        const isPremium = user?.role === 'premium' || user?.is_premium || user?.premium_status === 'active';
         const isPending = user?.premium_status === 'pending';
 
         if (isPremium) {
@@ -1285,7 +1283,7 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
                 <h4 className="text-xs font-black text-text-muted uppercase tracking-[0.2em] px-2">Estatus y Beneficios</h4>
                 <div className="grid grid-cols-1 gap-3">
                   
-                {(user?.role === 'professional' || user?.role === 'premium' || user?.is_premium) ? (
+                {(user?.role === 'professional' || (user?.professions && user?.professions.length > 0)) ? (
                   <>
                     {/* Professional Counter 1: Visibilidad Premium */}
                     <div className="flex gap-4 p-4 bg-white dark:bg-bg-primary rounded-2xl border border-gray-100 dark:border-white/5 shadow-soft">
@@ -1437,7 +1435,7 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
             <div className="flex flex-col gap-4">
               <h4 className="text-xs font-black text-text-muted uppercase tracking-[0.2em] px-2">Incluye Beneficios Premium:</h4>
               <div className="flex flex-col gap-3">
-                {(user?.role === 'professional' || user?.role === 'premium' || user?.is_premium) ? (
+                {(user?.role === 'professional' || (user?.professions && user?.professions.length > 0)) ? (
                   [
                     { icon: <Crown size={16} />, title: 'Sello de Verificación Destacada', desc: 'Sello dorado premium en tu perfil y cotizaciones que genera cobros seguros y un 80% más de confianza.' },
                     { icon: <Eye size={16} />, title: 'Posicionamiento y Tráfico Prioritario', desc: 'Aparecé en los primeros puestos de búsquedas de tu zona. Recibí hasta un 300% más de propuestas directas.' },
@@ -1549,7 +1547,7 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
       title: 'Soporte Técnico',
       content: (() => {
         const isProfessional = user?.role === 'professional';
-        const isPremium = user?.role === 'premium' || user?.is_premium || user?.premium_status === 'active' || user?.displayName?.toLowerCase().includes('victoria');
+        const isPremium = user?.role === 'premium' || user?.is_premium || user?.premium_status === 'active';
         
         const faqItems = isProfessional ? [
           {
@@ -1865,6 +1863,33 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
                   className="w-full bg-transparent border-b border-gray-200 dark:border-gray-800 py-2 focus:border-primary outline-none text-text-main text-base transition-colors" 
                 />
               </div>
+
+              <div className="flex flex-col gap-1 mt-2 px-2">
+                <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">TARIFA BASE DEL SERVICIO</label>
+                <div className="relative flex items-center border-b border-gray-200 dark:border-gray-800 focus-within:border-primary transition-colors">
+                  <span className="text-text-main font-bold text-base mr-1 select-none">$</span>
+                  <input 
+                    type="text" 
+                    value={editBasePrice} 
+                    onChange={(e) => {
+                      let val = e.target.value.replace(/\D/g, '');
+                      if (val) {
+                        const parsed = parseInt(val, 10);
+                        if (!isNaN(parsed)) {
+                          val = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0 }).format(parsed);
+                        }
+                      }
+                      setEditBasePrice(val);
+                    }}
+                    placeholder="Ej: 15.000"
+                    className="w-full bg-transparent py-2 outline-none text-text-main text-base transition-colors placeholder:text-gray-400" 
+                  />
+                </div>
+                <p className="text-[9px] text-gray-400 mt-1.5 leading-snug">
+                  Este monto se mostrará de manera pública a los clientes como tu tarifa mínima de visita o contratación inicial.
+                </p>
+              </div>
+
               <div className="flex flex-col gap-1 mt-2 px-2">
                 <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Datos Profesionales (Uno por línea)</label>
                 <textarea 
@@ -2367,7 +2392,7 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
           const isProfessional = user?.role === 'professional';
   
           if (isProfessional) {
-            const isPremium = user?.role === 'premium' || user?.premium_status === 'active' || user?.is_premium || user?.displayName?.toLowerCase().includes('victoria');
+            const isPremium = user?.role === 'premium' || user?.premium_status === 'active' || user?.is_premium;
             const totalPoints = isPremium ? Math.max(stats.count * 150, 6000) : stats.count * 150;
           let currentLevel = 'Bronce';
           let nextLevel = 'Plata';
@@ -3290,11 +3315,22 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
           <div className="flex-1 text-left relative z-10">
             <h2 className="text-xl md:text-2xl font-bold text-text-main font-manrope tracking-tight">{toTitleCase(user?.displayName || 'Diego Reartes')}</h2>
             <div className="flex flex-col items-start gap-1 mt-1">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-full border border-emerald-500/20 backdrop-blur-sm">
-                 <span className="text-[9px] font-bold uppercase tracking-widest">
-                   {user?.role === 'client' ? 'Cliente Premium' : 'Profesional Elite'}
-                 </span>
-              </div>
+              {(() => {
+                const isPremium = user?.role === 'premium' || user?.is_premium || user?.premium_status === 'active';
+                return (
+                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border backdrop-blur-sm ${
+                    isPremium 
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 border-emerald-500/20' 
+                      : 'bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 border-indigo-500/20'
+                  }`}>
+                     <span className="text-[9px] font-bold uppercase tracking-widest">
+                       {user?.role === 'professional' || (user?.professions && user?.professions.length > 0)
+                          ? (isPremium ? 'Profesional Elite' : 'Profesional')
+                          : (isPremium ? 'Cliente Premium' : 'Cliente')}
+                     </span>
+                  </div>
+                );
+              })()}
               {user?.role === 'professional' && (
                 <p className="text-[11px] font-semibold text-text-muted opacity-80 leading-snug italic mt-1 max-w-[240px]">
                   "{user?.bio || 'Apasionado por la excelencia técnica y el servicio de calidad en cada proyecto.'}"
@@ -3382,10 +3418,10 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
           <h3 className="text-[10px] font-bold text-text-muted uppercase tracking-widest px-2 opacity-70">Gestión de Perfil</h3>
           <div className="flex flex-col gap-1.5">
             {[
-              { id: 'premium', icon: <Crown size={18} />, title: 'Membresía Premium', subtitle: user?.role === 'premium' ? 'Activa' : (user?.premium_status === 'pending' ? 'Pendiente' : 'Mejora tu perfil'), color: 'bg-yellow-500/10 text-yellow-500', roles: ['professional', 'client'] },
-              { id: 'professions', icon: <Briefcase size={18} />, title: 'Profesiones y Certificados', subtitle: 'Habilitar oficios, títulos y matrículas', color: 'bg-emerald-500/10 text-emerald-600', roles: ['professional'] },
+              { id: 'premium', icon: <Crown size={18} />, title: 'Membresía Premium', subtitle: (user?.role === 'premium' || user?.is_premium || user?.premium_status === 'active') ? 'Activa' : (user?.premium_status === 'pending' ? 'Pendiente' : 'Mejora tu perfil'), color: 'bg-yellow-500/10 text-yellow-500', roles: ['professional', 'client', 'premium'] },
+              { id: 'professions', icon: <Briefcase size={18} />, title: 'Profesiones y Certificados', subtitle: 'Habilitar oficios, títulos y matrículas', color: 'bg-emerald-500/10 text-emerald-600', roles: ['professional', 'premium'] },
               { id: 'info', icon: <User size={18} />, title: 'Datos Personales', subtitle: 'Información y contacto', color: 'bg-primary/5 text-primary', hideForParams: false },
-              { id: 'earnings', icon: <TrendingUp size={18} />, title: 'Mis Finanzas', subtitle: 'Ganancias y facturación', color: 'bg-success/5 text-success', roles: ['professional'] },
+              { id: 'earnings', icon: <TrendingUp size={18} />, title: 'Mis Finanzas', subtitle: 'Ganancias y facturación', color: 'bg-success/5 text-success', roles: ['professional', 'premium'] },
               { id: 'wallet', icon: <CreditCard size={18} />, title: 'Billetera', subtitle: 'Métodos de pago', color: 'bg-indigo-500/5 text-indigo-500', roles: ['client'] },
               { id: 'prefs', icon: <Settings size={18} />, title: 'Preferencias', subtitle: 'Alertas y notificaciones', color: 'bg-secondary/5 text-secondary', hideForParams: false },
               { id: 'privacy', icon: <Shield size={18} />, title: 'Seguridad', subtitle: 'Privacidad y contraseñas', color: 'bg-orange-500/5 text-orange-500', hideForParams: false },
@@ -3513,6 +3549,14 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
 
                       if (user?.role === 'professional') {
                         profileUpdates.experienceYears = parseInt(editExperienceYears, 10) || 0;
+                        const parsePrice = parseInt(editBasePrice.replace(/\D/g, ''), 10);
+                        if (!isNaN(parsePrice)) {
+                          profileUpdates.basePrice = parsePrice;
+                          profileUpdates.price = `$${new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0 }).format(parsePrice)}`;
+                        } else {
+                          profileUpdates.basePrice = null;
+                          profileUpdates.price = 'Precio a convenir';
+                        }
                         profileUpdates.credentials = editCredentials.split('\n').map(c => c.trim()).filter(Boolean);
                         profileUpdates.antecedentes_url = antecedentesUrl || '';
                         profileUpdates.antecedentes_ok = !!antecedentesUrl;
@@ -3535,16 +3579,14 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
                       showToast('Preferencias guardadas');
                       setActiveModal(null);
                     } else if (activeModal === 'premium') {
-                      const isPremium = user?.role === 'premium' || user?.is_premium || user?.premium_status === 'active' || user?.displayName?.toLowerCase().includes('victoria');
+                      const isPremium = user?.role === 'premium' || user?.is_premium || user?.premium_status === 'active';
                       if (isPremium) {
                         if (user?.premium_status === 'cancelling') {
-                          showToast('Suscripción programada para finalizar.');
+                          showToast('Suscripción ya está cancelada o pendiente de baja.');
                           setActiveModal(null);
                         } else {
-                          if (window.confirm('¿Estás seguro de que deseas cancelar la renovación de tu suscripción? Mantendrás tus privilegios premium hasta el fin del período.')) {
-                            await handleCancelSubscription();
-                            setActiveModal(null);
-                          }
+                          await handleCancelSubscription();
+                          setActiveModal(null);
                         }
                       } else if (user?.premium_status === 'pending') {
                         setActiveModal(null);
@@ -3568,7 +3610,7 @@ export default function Profile({ user, onSignOut }: { user: any, onSignOut: () 
                   className="w-full sm:w-[calc(100%-32px)] mx-auto mt-6 bg-primary text-white rounded-[24px] h-[56px] font-bold shadow-lg shadow-primary/20 active:scale-95 transition-transform text-base shrink-0"
                 >
                   {activeModal === 'premium' ? (
-                    user?.role === 'premium' || user?.is_premium || user?.premium_status === 'active' ? 'Gestionar Suscripción' : (
+                    user?.role === 'premium' || user?.is_premium || user?.premium_status === 'active' ? 'Quitar Suscripción Premium' : (
                       user?.premium_status === 'pending' ? 'Cerrar' : 'Enviar Comprobante de Pago'
                     )
                   ) : 'Guardar Cambios'}

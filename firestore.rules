@@ -57,7 +57,7 @@ service cloud.firestore {
              (data.clientId == request.auth.uid || ('professionalId' in data && data.professionalId == request.auth.uid)) &&
              data.category is string && data.category.size() <= 200 &&
              data.description is string && data.description.size() <= 10000 &&
-             data.status in ['pending', 'accepted', 'in_progress', 'completed', 'cancelled', 'paid_completed'] &&
+             data.status in ['pending', 'accepted', 'in_progress', 'completed', 'cancelled', 'paid_completed', 'waiting_client_approval'] &&
              data.location is map &&
              (
                (!('lat' in data.location) || data.location.lat is int || data.location.lat is float) &&
@@ -140,50 +140,37 @@ service cloud.firestore {
       // Professional can list pending jobs or their own assigned jobs
       allow list: if isSignedIn() && (
         resource.data.clientId == request.auth.uid || 
-        resource.data.professionalId == request.auth.uid ||
+        ('professionalId' in resource.data && resource.data.professionalId == request.auth.uid) ||
         resource.data.status == 'pending'
       );
 
       allow create: if isSignedIn();
 
       allow delete: if isSignedIn() && isValidId(jobId) && (
-        isOwner(existing().clientId) || isOwner(existing().professionalId) || isAdmin()
+        isOwner(existing().clientId) || 
+        ('professionalId' in existing() && isOwner(existing().professionalId)) || 
+        isAdmin()
       );
       
       allow update: if isSignedIn() && isValidId(jobId) && isValidJob(incoming()) && (
-        // Action: Cancel
-        (incoming().status == 'cancelled' && 
-         (isOwner(existing().clientId) || (existing().professionalId != null && isOwner(existing().professionalId))) && 
-         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        // 1. Action: Professional Accepts the job (no professionalId exists in existing yet)
+        (existing().status == 'pending' && 
+         incoming().professionalId == request.auth.uid && 
+         incoming().status == 'accepted' && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['professionalId', 'professionalName', 'professionalAvatar', 'status', 'updatedAt']))
         ||
-        // Professional actions (Accept, Start, Finish)
-        (
-          // Action: Accept
-          (existing().status == 'pending' && 
-           incoming().professionalId == request.auth.uid && 
-           incoming().status == 'accepted' && 
-           incoming().diff(existing()).affectedKeys().hasOnly(['professionalId', 'professionalName', 'professionalAvatar', 'status', 'updatedAt']))
-          ||
-          // Action: Start/Finish
-          (existing().professionalId == request.auth.uid && 
-           incoming().status in ['in_progress', 'completed'] && 
-           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
-        )
-        ||
-        // Action: Upload Finished Photo (Both can do it)
-        ((isOwner(existing().clientId) || (existing().professionalId != null && isOwner(existing().professionalId))) &&
-         (incoming().status == 'completed' || incoming().status == existing().status) &&
-         incoming().diff(existing()).affectedKeys().hasOnly(['finishedWorkImage', 'status', 'updatedAt']))
-        ||
-        // Action: Mark Paid & Review (Client only)
-        (isOwner(existing().clientId) && 
-         existing().status in ['completed', 'accepted', 'in_progress'] &&
-         incoming().status == 'paid_completed' &&
-         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rating', 'review', 'updatedAt', 'finishedWorkImage']))
-        ||
-        // Action: Chat Updates (lastMessage, etc)
-        ((isOwner(existing().clientId) || (existing().professionalId != null && isOwner(existing().professionalId))) &&
-         incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'lastMessageSenderId', 'hasUnreadMessage', 'updatedAt']))
+        // 2. All other actions: only the client or the assigned professional can update
+        ((isOwner(existing().clientId) || ('professionalId' in existing() && isOwner(existing().professionalId))) && (
+          // Action: Cancel
+          (incoming().status == 'cancelled' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+          
+          // Action: Chat update or message updates
+          incoming().diff(existing()).affectedKeys().hasAny(['lastMessage', 'lastMessageSenderId', 'hasUnreadMessage', 'updatedAt']) ||
+          
+          // Action: Change status (in_progress, waiting_client_approval, completed, paid_completed) and/or upload/set finishedWorkImage, reviews, etc.
+          (incoming().status in ['in_progress', 'completed', 'waiting_client_approval', 'paid_completed'] &&
+           incoming().diff(existing()).affectedKeys().hasAny(['status', 'finishedWorkImage', 'updatedAt', 'rating', 'review']))
+        ))
       );
     }
 
@@ -197,15 +184,18 @@ service cloud.firestore {
     match /jobs/{jobId}/messages/{messageId} {
       allow get: if isSignedIn() && isValidId(jobId) && isValidId(messageId) && (
         get(/databases/$(database)/documents/jobs/$(jobId)).data.clientId == request.auth.uid ||
-        get(/databases/$(database)/documents/jobs/$(jobId)).data.professionalId == request.auth.uid
+        ('professionalId' in get(/databases/$(database)/documents/jobs/$(jobId)).data && 
+         get(/databases/$(database)/documents/jobs/$(jobId)).data.professionalId == request.auth.uid)
       );
       allow list: if isSignedIn() && isValidId(jobId) && (
         get(/databases/$(database)/documents/jobs/$(jobId)).data.clientId == request.auth.uid ||
-        get(/databases/$(database)/documents/jobs/$(jobId)).data.professionalId == request.auth.uid
+        ('professionalId' in get(/databases/$(database)/documents/jobs/$(jobId)).data && 
+         get(/databases/$(database)/documents/jobs/$(jobId)).data.professionalId == request.auth.uid)
       );
       allow create: if isSignedIn() && isValidId(jobId) && isValidId(messageId) && isValidMessage(incoming()) && (
         get(/databases/$(database)/documents/jobs/$(jobId)).data.clientId == request.auth.uid ||
-        get(/databases/$(database)/documents/jobs/$(jobId)).data.professionalId == request.auth.uid
+        ('professionalId' in get(/databases/$(database)/documents/jobs/$(jobId)).data && 
+         get(/databases/$(database)/documents/jobs/$(jobId)).data.professionalId == request.auth.uid)
       ) && incoming().createdAt == request.time;
     }
 

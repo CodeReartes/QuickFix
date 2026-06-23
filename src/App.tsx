@@ -30,16 +30,15 @@ function safeLazy(importFn: () => Promise<any>) {
   );
 }
 
-const Onboarding = safeLazy(() => import('./components/Onboarding'));
-const ReportProblem = safeLazy(() => import('./components/ReportProblem'));
-const NearbyJobs = safeLazy(() => import('./components/NearbyJobs'));
-const JobInProgress = safeLazy(() => import('./components/JobInProgress'));
-const RatingModal = safeLazy(() => import('./components/RatingModal'));
-const Messages = safeLazy(() => import('./components/Messages'));
-
-const Activity = safeLazy(() => import('./components/Activity'));
-const Profile = safeLazy(() => import('./components/Profile'));
-const AdminDashboard = safeLazy(() => import('./components/AdminDashboard'));
+import Profile from './components/Profile';
+import Onboarding from './components/Onboarding';
+import ReportProblem from './components/ReportProblem';
+import NearbyJobs from './components/NearbyJobs';
+import JobInProgress from './components/JobInProgress';
+import RatingModal from './components/RatingModal';
+import Messages from './components/Messages';
+import Activity from './components/Activity';
+import AdminDashboard from './components/AdminDashboard';
 
 type AppTab = 'home' | 'activity' | 'messages' | 'profile';
 
